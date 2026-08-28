@@ -1,0 +1,347 @@
+// ============================================================
+// Comoro Move — Schéma de base de données
+// Plateforme de réservation de transport (bus, taxis, camions)
+// pour la Grande Comore
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------ ENUMS ------------------
+
+enum VehicleType {
+  BUS
+  TAXI
+  VOITURE
+  CAMION
+}
+
+enum VehicleStatus {
+  ACTIVE
+  MAINTENANCE
+  INACTIVE
+}
+
+enum AgencyStatus {
+  PENDING // en attente de validation par le super-admin
+  APPROVED
+  SUSPENDED
+}
+
+enum AccountType {
+  AGENCE       // société de transport (bus, flotte de taxis, camions...)
+  PARTICULIER  // propriétaire individuel qui met sa propre voiture à disposition
+}
+
+enum AgencyAdminRole {
+  OWNER
+  MANAGER
+}
+
+enum TripStatus {
+  SCHEDULED
+  BOARDING
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum BookingType {
+  SHARED_SEAT // place dans un bus/taxi partagé, trajet programmé
+  PRIVATE_FULL_DAY // location taxi/voiture à la journée (mariage, cérémonie...)
+  CARGO_MOVING // camion pour déménagement / courses / marchandises
+}
+
+enum BookingStatus {
+  PENDING
+  CONFIRMED
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum PaymentMethod {
+  MOBILE_MONEY
+  CASH_ON_BOARD
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum SeatPreference {
+  FENETRE
+  COULOIR
+  PEU_IMPORTE
+}
+
+// ------------------ UTILISATEURS (App mobile) ------------------
+
+model User {
+  id           String   @id @default(uuid())
+  firstName    String
+  lastName     String
+  phone        String   @unique
+  email        String?  @unique
+  passwordHash String
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  bookings      Booking[]
+  reviews       Review[]
+  notifications Notification[]
+
+  @@map("users")
+}
+
+// ------------------ AGENCES & ADMIN (Plateforme web) ------------------
+
+model Agency {
+  id          String       @id @default(uuid())
+  name        String
+  description String?
+  logoUrl     String?
+  phone       String
+  email       String?
+  city        String // Moroni, Mitsamiouli, Foumbouni, Mbéni, Ouzioini...
+  address     String?
+  type        AccountType  @default(AGENCE) // AGENCE (société) ou PARTICULIER (propriétaire individuel)
+  status      AgencyStatus @default(PENDING)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  // Renseignés lors d'une candidature "Devenir Professionnel" côté particulier
+  licenseB        Boolean?     // possède le permis de conduire catégorie B
+  licenseType     VehicleType? // type de permis détenu : VOITURE, BUS, CAMION...
+  ownsVehicle     Boolean?     // possède déjà un véhicule à mettre à disposition
+  appointmentDate DateTime?    // rendez-vous souhaité pour finaliser le dossier
+
+  admins   AgencyAdmin[]
+  vehicles Vehicle[]
+  drivers  Driver[]
+  trips    Trip[]
+  bookings Booking[]
+  reviews  Review[]
+
+  @@map("agencies")
+}
+
+model AgencyAdmin {
+  id           String          @id @default(uuid())
+  agencyId     String
+  agency       Agency          @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  name         String
+  email        String          @unique
+  passwordHash String
+  role         AgencyAdminRole @default(MANAGER)
+  createdAt    DateTime        @default(now())
+
+  @@map("agency_admins")
+}
+
+// Super-admin de la plateforme (valide les agences, supervise tout)
+model SuperAdmin {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  @@map("super_admins")
+}
+
+// ------------------ VÉHICULES & CHAUFFEURS ------------------
+
+model Vehicle {
+  id            String        @id @default(uuid())
+  agencyId      String
+  agency        Agency        @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  type          VehicleType
+  brand         String // ex: Toyota, BMW, Mercedes
+  model         String
+  plateNumber   String        @unique
+  seatCapacity  Int // 4 pour taxi, 20+ pour bus, 1 (charge) pour camion
+  photoUrl      String?
+  features      String[] // ["Climatisation", "Wifi", "Musique", ...]
+  basePrice     Float // prix de base (trajet partagé) ou prix/jour (privé) ou prix/course (camion)
+  pricePerKm    Float? // optionnel, pour calcul dynamique
+  status        VehicleStatus @default(ACTIVE)
+  currentLat    Float?        // position actuelle du véhicule (mise à jour par l'agence/le particulier)
+  currentLng    Float?
+  locationUpdatedAt DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  drivers  Driver[]
+  trips    Trip[]
+  bookings Booking[]
+
+  @@map("vehicles")
+}
+
+model Driver {
+  id            String   @id @default(uuid())
+  agencyId      String
+  agency        Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  vehicleId     String?
+  vehicle       Vehicle? @relation(fields: [vehicleId], references: [id])
+  name          String
+  phone         String
+  licenseNumber String
+  photoUrl      String?
+  rating        Float    @default(5.0)
+  createdAt     DateTime @default(now())
+
+  trips Trip[]
+
+  @@map("drivers")
+}
+
+// ------------------ TRAJETS PROGRAMMÉS ------------------
+// Ex: Bus Moroni -> Mitsamiouli demain 9h, 20 places, 1500 KMF/place
+
+model Trip {
+  id                String     @id @default(uuid())
+  agencyId          String
+  agency            Agency     @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  vehicleId         String
+  vehicle           Vehicle    @relation(fields: [vehicleId], references: [id])
+  driverId          String?
+  driver            Driver?    @relation(fields: [driverId], references: [id])
+
+  originName        String
+  originLat         Float
+  originLng         Float
+  destinationName   String
+  destinationLat    Float
+  destinationLng    Float
+
+  departureTime     DateTime
+  estimatedArrival  DateTime?
+  distanceKm        Float?
+  pricePerSeat      Float
+  totalSeats        Int
+  bookedSeats       Int        @default(0)
+  status            TripStatus @default(SCHEDULED)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  bookings       Booking[]
+  locationPings  LocationPing[]
+
+  @@map("trips")
+}
+
+// ------------------ RÉSERVATIONS ------------------
+
+model Booking {
+  id              String         @id @default(uuid())
+  reference       String         @unique // ex: CM-2026-000123
+  userId          String
+  user            User           @relation(fields: [userId], references: [id])
+  agencyId        String
+  agency          Agency         @relation(fields: [agencyId], references: [id])
+  vehicleId       String
+  vehicle         Vehicle        @relation(fields: [vehicleId], references: [id])
+  tripId          String?
+  trip            Trip?          @relation(fields: [tripId], references: [id])
+
+  bookingType     BookingType
+  scheduledDate   DateTime
+  seatNumber      Int?
+  seatPreference  SeatPreference @default(PEU_IMPORTE)
+  passengersCount Int            @default(1)
+
+  pickupName      String?
+  pickupLat       Float?
+  pickupLng       Float?
+  dropoffName     String?
+  dropoffLat      Float?
+  dropoffLng      Float?
+
+  purpose         String? // motif: "Mariage", "Déménagement", "Course en ville"...
+  notes           String?
+
+  totalPrice      Float
+  paymentMethod   PaymentMethod
+  paymentStatus   PaymentStatus  @default(PENDING)
+  status          BookingStatus  @default(PENDING)
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  payment  Payment?
+  review   Review?
+
+  @@map("bookings")
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  bookingId       String        @unique
+  booking         Booking       @relation(fields: [bookingId], references: [id])
+  amount          Float
+  method          PaymentMethod
+  provider        String? // "HolluPay", "MVola", "Especes"...
+  transactionRef  String?
+  status          PaymentStatus @default(PENDING)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("payments")
+}
+
+// ------------------ SUIVI TEMPS RÉEL ------------------
+
+model LocationPing {
+  id        String   @id @default(uuid())
+  tripId    String
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  lat       Float
+  lng       Float
+  heading   Float?
+  speedKmh  Float?
+  createdAt DateTime @default(now())
+
+  @@index([tripId, createdAt])
+  @@map("location_pings")
+}
+
+// ------------------ AVIS & NOTIFICATIONS ------------------
+
+model Review {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  agencyId  String
+  agency    Agency   @relation(fields: [agencyId], references: [id])
+  bookingId String   @unique
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+  rating    Int // 1-5
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@map("reviews")
+}
+
+model Notification {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("notifications")
+}

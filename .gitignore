@@ -1,0 +1,9 @@
+# Système / éditeurs
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+*.log
+
+# Chaque brique (admin/, backend/, mobile/) a déjà son propre .gitignore
+# qui exclut node_modules, .env, .next, .expo, dist, etc.
