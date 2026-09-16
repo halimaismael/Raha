@@ -4,43 +4,12 @@ const { nextIndependentDriverCode } = require('../utils/professionalCode.util');
 // ---- Validation par Raha (rendez-vous) ----
 
 // PATCH /api/independent-drivers/:id/validate  — réservé à l'équipe Raha.
-// Il n'existe pas encore de tableau de bord super-admin : cette route est
-// protégée par une clé secrète partagée (variable d'environnement
-// RAHA_OPS_KEY, à définir sur le serveur), transmise dans l'en-tête
-// "x-raha-ops-key". C'est cette étape — après le rendez-vous / la
-// vérification du dossier du chauffeur — qui lui attribue enfin son
-// identifiant professionnel unique et le rend visible des usagers.
-function checkOpsKey(req, res) {
-  const key = req.headers['x-raha-ops-key'];
-  if (!process.env.RAHA_OPS_KEY || !key || key !== process.env.RAHA_OPS_KEY) {
-    res.status(403).json({ message: "Accès refusé" });
-    return false;
-  }
-  return true;
-}
-
-// GET /api/independent-drivers/ops-key-check — route de diagnostic TEMPORAIRE
-// (à retirer une fois le problème de clé résolu). Ne révèle jamais la clé en
-// clair, seulement sa longueur et son premier/dernier caractère, pour repérer
-// un espace ou un caractère invisible sans exposer le secret complet.
-function describe(value) {
-  if (!value) return { present: false, length: 0 };
-  return {
-    present: true,
-    length: value.length,
-    preview: value.length > 1 ? `${value[0]}...${value[value.length - 1]}` : value,
-  };
-}
-async function opsKeyDebug(req, res) {
-  const received = req.headers['x-raha-ops-key'];
-  const onServer = describe(process.env.RAHA_OPS_KEY);
-  const inRequest = describe(received);
-  res.json({
-    onServer,
-    inRequest,
-    matches: !!process.env.RAHA_OPS_KEY && !!received && process.env.RAHA_OPS_KEY === received,
-  });
-}
+// Protégé par requireAuth(['SUPER_ADMIN']) au niveau de la route (voir
+// independentDriver.routes.js) : seul un compte super-admin connecté au
+// tableau de bord "Agence Raha" peut valider un dossier. C'est cette étape
+// — après le rendez-vous / la vérification du dossier du chauffeur — qui
+// lui attribue enfin son identifiant professionnel unique et le rend
+// visible des usagers.
 
 async function approve(driver) {
   const professionalCode = driver.professionalCode || await nextIndependentDriverCode();
@@ -57,7 +26,6 @@ async function approve(driver) {
 // utiliser dans validateDriver ci-dessous.
 async function listPending(req, res, next) {
   try {
-    if (!checkOpsKey(req, res)) return;
     const drivers = await prisma.independentDriver.findMany({
       where: { status: 'PENDING' },
       select: { id: true, firstName: true, lastName: true, phone: true, zones: true, createdAt: true },
@@ -69,7 +37,6 @@ async function listPending(req, res, next) {
 
 async function validateDriver(req, res, next) {
   try {
-    if (!checkOpsKey(req, res)) return;
     const driver = await prisma.independentDriver.findUnique({ where: { id: req.params.id } });
     if (!driver) return res.status(404).json({ message: "Chauffeur introuvable" });
     const safe = await approve(driver);
@@ -84,7 +51,6 @@ async function validateDriver(req, res, next) {
 // le rejet, pour ne pas supprimer un professionnel déjà actif.
 async function rejectDriver(req, res, next) {
   try {
-    if (!checkOpsKey(req, res)) return;
     const driver = await prisma.independentDriver.findUnique({ where: { id: req.params.id } });
     if (!driver) return res.status(404).json({ message: "Chauffeur introuvable" });
     if (driver.status !== 'PENDING') {
@@ -100,7 +66,6 @@ async function rejectDriver(req, res, next) {
 // d'avoir à chercher son "id" au préalable.
 async function validateDriverByPhone(req, res, next) {
   try {
-    if (!checkOpsKey(req, res)) return;
     const { phone } = req.body;
     if (!phone) return res.status(400).json({ message: "phone requis" });
     const driver = await prisma.independentDriver.findUnique({ where: { phone } });
@@ -269,7 +234,6 @@ async function setMyAvailability(req, res, next) {
 }
 
 module.exports = {
-  opsKeyDebug,
   listPending, validateDriver, validateDriverByPhone, rejectDriver,
   getMe, updateMe, getPublicProfile, listIndependentDrivers,
   listMyPricing, createPricing, updatePricing, deletePricing,

@@ -7,4 +7,8 @@ const { requireAuth } = require('../middleware/auth');
 router.post('/', requireAuth(['USER']), ctrl.createMwanaRequest);
 router.get('/mine', requireAuth(['USER']), ctrl.listMyMwanaRequests);
 
+// Super-admin Raha (tableau de bord "Agence Raha")
+router.get('/admin/all', requireAuth(['SUPER_ADMIN']), ctrl.listAllMwanaRequests);
+router.patch('/:id/status', requireAuth(['SUPER_ADMIN']), ctrl.updateMwanaStatus);
+
 module.exports = router;

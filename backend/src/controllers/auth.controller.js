@@ -217,6 +217,53 @@ async function loginIndependentDriver(req, res, next) {
   }
 }
 
+// -------- SUPER-ADMIN RAHA (tableau de bord interne "Agence Raha") --------
+
+// POST /api/auth/super-admin/bootstrap — crée le tout premier compte
+// super-admin. Ne fonctionne qu'une seule fois : refuse dès qu'un compte
+// super-admin existe déjà, et exige la clé RAHA_OPS_KEY pour éviter que
+// n'importe qui puisse s'auto-créer un accès. Une fois le premier compte
+// créé, on peut soit s'arrêter là, soit en créer d'autres directement en
+// base de données si besoin — cette route ne sert qu'à démarrer.
+async function bootstrapSuperAdmin(req, res, next) {
+  try {
+    const { name, email, password, key } = req.body;
+    if (!process.env.RAHA_OPS_KEY || !key || key !== process.env.RAHA_OPS_KEY) {
+      return res.status(403).json({ message: "Clé invalide" });
+    }
+    const existingCount = await prisma.superAdmin.count();
+    if (existingCount > 0) {
+      return res.status(409).json({ message: "Un compte super-admin existe déjà. Utilisez la connexion normale." });
+    }
+    if (!name || !email || !password || password.length < 6) {
+      return res.status(400).json({ message: "Nom, email et mot de passe (6 caractères minimum) requis" });
+    }
+    const passwordHash = await bcrypt.hash(password, 10);
+    const admin = await prisma.superAdmin.create({ data: { name, email, passwordHash } });
+    const token = signToken({ id: admin.id, role: 'SUPER_ADMIN' });
+    res.status(201).json({
+      message: "Compte super-admin créé.",
+      token,
+      admin: { id: admin.id, name: admin.name, email: admin.email },
+    });
+  } catch (err) { next(err); }
+}
+
+async function loginSuperAdmin(req, res, next) {
+  try {
+    const { email, password } = req.body;
+    const admin = await prisma.superAdmin.findUnique({ where: { email } });
+    if (!admin) return res.status(401).json({ message: "Identifiants incorrects" });
+    const valid = await bcrypt.compare(password, admin.passwordHash);
+    if (!valid) return res.status(401).json({ message: "Identifiants incorrects" });
+    const token = signToken({ id: admin.id, role: 'SUPER_ADMIN' });
+    res.json({
+      token,
+      admin: { id: admin.id, name: admin.name, email: admin.email },
+    });
+  } catch (err) { next(err); }
+}
+
 // -------- CHAUFFEUR D'AGENCE (App mobile — espace pro, une fois le compte activé par l'agence) --------
 
 async function loginDriver(req, res, next) {
@@ -256,4 +303,5 @@ module.exports = {
   loginAgencyAdmin, registerAgency,
   registerIndependentDriver, loginIndependentDriver,
   loginDriver,
+  bootstrapSuperAdmin, loginSuperAdmin,
 };

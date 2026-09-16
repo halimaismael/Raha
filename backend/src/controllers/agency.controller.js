@@ -66,4 +66,46 @@ async function getMyAgency(req, res, next) {
   } catch (err) { next(err); }
 }
 
-module.exports = { listAgencies, getAgency, updateMyAgency, getMyAgency };
+// ---- Super-admin Raha (tableau de bord "Agence Raha") ----
+
+// GET /api/agencies/admin/all — toutes les agences, quel que soit leur statut.
+async function listAllAgencies(req, res, next) {
+  try {
+    const agencies = await prisma.agency.findMany({
+      select: {
+        id: true, name: true, professionalCode: true, type: true, status: true,
+        city: true, phone: true, email: true, createdAt: true,
+        _count: { select: { vehicles: true, drivers: true, trips: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    res.json(agencies);
+  } catch (err) { next(err); }
+}
+
+// PATCH /api/agencies/:id/approve
+async function approveAgency(req, res, next) {
+  try {
+    const agency = await prisma.agency.update({
+      where: { id: req.params.id },
+      data: { status: 'APPROVED' },
+    });
+    res.json({ message: `${agency.name} est maintenant validée.`, agency });
+  } catch (err) { next(err); }
+}
+
+// PATCH /api/agencies/:id/suspend
+async function suspendAgency(req, res, next) {
+  try {
+    const agency = await prisma.agency.update({
+      where: { id: req.params.id },
+      data: { status: 'SUSPENDED' },
+    });
+    res.json({ message: `${agency.name} a été suspendue.`, agency });
+  } catch (err) { next(err); }
+}
+
+module.exports = {
+  listAgencies, getAgency, updateMyAgency, getMyAgency,
+  listAllAgencies, approveAgency, suspendAgency,
+};

@@ -83,4 +83,43 @@ async function listMyMwanaRequests(req, res, next) {
   }
 }
 
-module.exports = { createMwanaRequest, listMyMwanaRequests };
+// ---- Super-admin Raha (tableau de bord "Agence Raha") ----
+
+const STATUSES = ['PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED'];
+
+// GET /api/mwana-requests/admin/all — tous les rendez-vous Raha Mwana, avec
+// les infos de l'usager qui les a pris.
+async function listAllMwanaRequests(req, res, next) {
+  try {
+    const requests = await prisma.mwanaRequest.findMany({
+      include: {
+        user: { select: { firstName: true, lastName: true, phone: true } },
+      },
+      orderBy: { appointmentDate: 'asc' },
+    });
+    res.json(requests);
+  } catch (err) { next(err); }
+}
+
+// PATCH /api/mwana-requests/:id/status  { status }
+// À utiliser après le passage du client en agence : CONFIRMED (rendez-vous
+// honoré, dossier en cours), COMPLETED (chauffeur mis en place), ou
+// CANCELLED (le client ne s'est pas présenté / a annulé).
+async function updateMwanaStatus(req, res, next) {
+  try {
+    const { status } = req.body;
+    if (!STATUSES.includes(status)) {
+      return res.status(400).json({ message: `Statut invalide. Valeurs possibles : ${STATUSES.join(', ')}` });
+    }
+    const request = await prisma.mwanaRequest.update({
+      where: { id: req.params.id },
+      data: { status },
+    });
+    res.json({ message: `Dossier ${request.reference} mis à jour : ${status}.`, request });
+  } catch (err) { next(err); }
+}
+
+module.exports = {
+  createMwanaRequest, listMyMwanaRequests,
+  listAllMwanaRequests, updateMwanaStatus,
+};

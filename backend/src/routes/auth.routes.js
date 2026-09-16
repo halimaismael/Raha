@@ -17,4 +17,8 @@ router.post('/independent-drivers/login', ctrl.loginIndependentDriver);
 // Chauffeurs d'agence (mobile — une fois leur compte activé par l'agence)
 router.post('/drivers/login', ctrl.loginDriver);
 
+// Super-admin Raha (tableau de bord interne)
+router.post('/super-admin/bootstrap', ctrl.bootstrapSuperAdmin);
+router.post('/super-admin/login', ctrl.loginSuperAdmin);
+
 module.exports = router;

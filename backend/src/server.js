@@ -21,6 +21,7 @@ const driverRoutes = require('./routes/driver.routes');
 const independentDriverRoutes = require('./routes/independentDriver.routes');
 const notificationRoutes = require('./routes/notification.routes');
 const mwanaRoutes = require('./routes/mwana.routes');
+const superAdminRoutes = require('./routes/superAdmin.routes');
 
 const app = express();
 const server = http.createServer(app);
@@ -50,6 +51,7 @@ app.use('/api/drivers', driverRoutes);
 app.use('/api/independent-drivers', independentDriverRoutes);
 app.use('/api/notifications', notificationRoutes);
 app.use('/api/mwana-requests', mwanaRoutes);
+app.use('/api/super-admin', superAdminRoutes);
 
 app.use(errorHandler);
 

@@ -3,6 +3,7 @@ import { useEffect, useState } from 'react';
 import DashboardShell from '../../components/DashboardShell';
 import EmptyState from '../../components/EmptyState';
 import Badge from '../../components/Badge';
+import { api } from '../../lib/api';
 
 interface PendingDriver {
   id: string;
@@ -23,12 +24,10 @@ export default function IndependentDriversPage() {
     setLoading(true);
     setError(null);
     try {
-      const res = await fetch('/api/independent-drivers', { cache: 'no-store' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.message || 'Erreur lors du chargement');
+      const { data } = await api.get('/independent-drivers/pending');
       setDrivers(data);
     } catch (err: any) {
-      setError(err?.message || 'Erreur lors du chargement');
+      setError(err?.response?.data?.message || 'Erreur lors du chargement');
     } finally {
       setLoading(false);
     }
@@ -40,13 +39,11 @@ export default function IndependentDriversPage() {
     if (!confirm(`Valider ${d.firstName} ${d.lastName} (${d.phone}) comme chauffeur indépendant Raha ?`)) return;
     setBusyId(d.id);
     try {
-      const res = await fetch(`/api/independent-drivers/${d.id}`, { method: 'PATCH' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.message || 'Erreur lors de la validation');
+      const { data } = await api.patch(`/independent-drivers/${d.id}/validate`);
       alert(data.message);
       load();
     } catch (err: any) {
-      alert(err?.message || 'Erreur lors de la validation');
+      alert(err?.response?.data?.message || 'Erreur lors de la validation');
     } finally {
       setBusyId(null);
     }
@@ -56,13 +53,11 @@ export default function IndependentDriversPage() {
     if (!confirm(`Refuser la candidature de ${d.firstName} ${d.lastName} ? Cette action supprime définitivement son dossier.`)) return;
     setBusyId(d.id);
     try {
-      const res = await fetch(`/api/independent-drivers/${d.id}`, { method: 'DELETE' });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data?.message || 'Erreur lors du refus');
+      const { data } = await api.delete(`/independent-drivers/${d.id}/reject`);
       alert(data.message);
       load();
     } catch (err: any) {
-      alert(err?.message || 'Erreur lors du refus');
+      alert(err?.response?.data?.message || 'Erreur lors du refus');
     } finally {
       setBusyId(null);
     }
@@ -71,14 +66,10 @@ export default function IndependentDriversPage() {
   return (
     <DashboardShell
       title="Chauffeurs indépendants"
-      subtitle="Validez ou refusez les candidatures des chauffeurs indépendants inscrits depuis l'application mobile"
+      subtitle="Validez ou refusez les candidatures inscrites depuis l'application mobile"
     >
       {loading && <p className="text-slate">Chargement...</p>}
-
-      {!loading && error && (
-        <div className="bg-red-50 text-red-600 text-sm rounded-xl p-4 mb-6">{error}</div>
-      )}
-
+      {!loading && error && <div className="bg-red-50 text-red-600 text-sm rounded-xl p-4 mb-6">{error}</div>}
       {!loading && !error && drivers.length === 0 && (
         <EmptyState message="Aucune candidature en attente pour le moment." />
       )}

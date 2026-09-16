@@ -16,14 +16,13 @@ router.delete('/me/pricing/:id', requireAuth(['INDEPENDENT_DRIVER']), ctrl.delet
 router.get('/me/availability', requireAuth(['INDEPENDENT_DRIVER']), ctrl.listMyAvailability);
 router.put('/me/availability', requireAuth(['INDEPENDENT_DRIVER']), ctrl.setMyAvailability);
 
-// Validation par l'équipe Raha (clé secrète — voir le contrôleur). Placées
-// avant "/:id" par cohérence, même si ces chemins plus longs/spécifiques ne
-// seraient de toute façon jamais interceptés par "/:id".
-router.get('/ops-key-check', ctrl.opsKeyDebug);
-router.get('/pending', ctrl.listPending);
-router.patch('/validate-by-phone', ctrl.validateDriverByPhone);
-router.patch('/:id/validate', ctrl.validateDriver);
-router.delete('/:id/reject', ctrl.rejectDriver);
+// Validation par l'équipe Raha (tableau de bord "Agence Raha", super-admin
+// uniquement). Placées avant "/:id" par cohérence, même si ces chemins
+// plus longs/spécifiques ne seraient de toute façon jamais interceptés.
+router.get('/pending', requireAuth(['SUPER_ADMIN']), ctrl.listPending);
+router.patch('/validate-by-phone', requireAuth(['SUPER_ADMIN']), ctrl.validateDriverByPhone);
+router.patch('/:id/validate', requireAuth(['SUPER_ADMIN']), ctrl.validateDriver);
+router.delete('/:id/reject', requireAuth(['SUPER_ADMIN']), ctrl.rejectDriver);
 
 // Annuaire public (app mobile côté usager)
 router.get('/', ctrl.listIndependentDrivers);

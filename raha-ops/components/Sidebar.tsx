@@ -3,21 +3,21 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
-import { IconDashboard, IconVan, IconUser, IconRoute, IconTicket, IconLogout } from './Icons';
+import { IconDashboard, IconUser, IconBuilding, IconCar, IconRoute, IconLogout } from './Icons';
 
 const NAV = [
   { href: '/dashboard', label: 'Tableau de bord', Icon: IconDashboard },
-  { href: '/vehicles', label: 'Véhicules', Icon: IconVan },
-  { href: '/drivers', label: 'Chauffeurs', Icon: IconUser },
-  { href: '/trips', label: 'Trajets programmés', Icon: IconRoute },
-  { href: '/bookings', label: 'Réservations', Icon: IconTicket },
+  { href: '/independent-drivers', label: 'Chauffeurs indépendants', Icon: IconCar },
+  { href: '/agencies', label: 'Agences', Icon: IconBuilding },
+  { href: '/users', label: 'Usagers', Icon: IconUser },
+  { href: '/appointments', label: 'Rendez-vous Raha Mwana', Icon: IconRoute },
 ];
 
 export default function Sidebar() {
   const pathname = usePathname();
-  const { agency, admin, logout } = useAuth();
+  const { admin, logout } = useAuth();
 
-  const initials = (admin?.name || agency?.name || '?')
+  const initials = (admin?.name || '?')
     .split(' ')
     .map((p: string) => p[0])
     .slice(0, 2)
@@ -32,11 +32,11 @@ export default function Sidebar() {
             <Image src="/logo-mark.png" alt="Raha" width={32} height={32} className="w-full h-full object-contain" priority />
           </span>
           <div>
-            <div className="text-lg font-display font-bold leading-tight">Raha</div>
-            <div className="text-[11px] text-ylang/90 italic leading-tight mt-0.5">Votre trajet, notre priorité</div>
+            <div className="text-lg font-display font-bold leading-tight">Agence Raha</div>
+            <div className="text-[11px] text-ylang/90 italic leading-tight mt-0.5">Espace interne</div>
           </div>
         </div>
-        <div className="text-xs text-sand/50 mt-3 uppercase tracking-wide font-medium">Espace agence</div>
+        <div className="text-xs text-sand/50 mt-3 uppercase tracking-wide font-medium">Équipe Raha</div>
       </div>
 
       <nav className="flex-1 px-3 py-5 space-y-1">
@@ -68,13 +68,10 @@ export default function Sidebar() {
             {initials}
           </div>
           <div className="min-w-0">
-            <div className="text-sm font-semibold truncate">{agency?.name}</div>
-            <div className="text-xs text-sand/50 truncate">{admin?.name} · {admin?.role}</div>
+            <div className="text-sm font-semibold truncate">{admin?.name}</div>
+            <div className="text-xs text-sand/50 truncate">{admin?.email}</div>
           </div>
         </div>
-        <span className="inline-block text-[10px] font-bold uppercase tracking-wide px-2 py-0.5 rounded-full bg-white/10 text-sand/80 mb-3">
-          {agency?.type === 'PARTICULIER' ? 'Particulier' : 'Agence'}
-        </span>
         <button onClick={logout} className="flex items-center gap-1.5 text-xs text-coral font-semibold hover:underline">
           <IconLogout className="w-3.5 h-3.5" />
           Se déconnecter
