@@ -1,0 +1,604 @@
+// ============================================================
+// Raha — Schéma de base de données
+// Plateforme de mise en relation usagers / chauffeurs indépendants / agences
+// pour la Grande Comore
+// ============================================================
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// ------------------ ENUMS ------------------
+
+enum VehicleType {
+  BUS
+  TAXI
+  VOITURE
+  CAMION
+}
+
+enum VehicleStatus {
+  ACTIVE
+  MAINTENANCE
+  INACTIVE
+}
+
+enum AgencyStatus {
+  PENDING // en attente de validation par le super-admin
+  APPROVED
+  SUSPENDED
+}
+
+enum AccountType {
+  AGENCE       // société de transport (bus, flotte de taxis, camions...)
+  PARTICULIER  // ancien type "propriétaire individuel" — conservé pour compatibilité,
+               // remplacé pour les nouvelles inscriptions par IndependentDriver
+}
+
+enum AgencyAdminRole {
+  OWNER
+  MANAGER
+}
+
+enum TripStatus {
+  SCHEDULED
+  BOARDING
+  ONGOING
+  COMPLETED
+  CANCELLED
+}
+
+enum BookingType {
+  SHARED_SEAT // place dans un bus/taxi partagé, trajet programmé
+  PRIVATE_FULL_DAY // location taxi/voiture à la journée (mariage, cérémonie...)
+  CARGO_MOVING // camion pour déménagement / courses / marchandises
+  POINT_TO_POINT // trajet direct A -> B (chauffeur indépendant ou agence)
+  CAR_RENTAL // location d'un véhicule sur plusieurs jours (voir VehicleRentalPeriod)
+}
+
+// Cycle de vie complet d'une réservation — chaque changement de statut est
+// enregistré et diffusé en temps réel à l'usager ET au professionnel concerné.
+enum BookingStatus {
+  PENDING          // en attente de réponse du professionnel
+  ACCEPTED         // le professionnel a accepté (avant confirmation définitive)
+  CONFIRMED        // réservation confirmée par Raha
+  DRIVER_ASSIGNED  // un chauffeur précis a été attribué (côté agence)
+  DRIVER_ARRIVING  // le chauffeur est en route vers le point de rendez-vous
+  DRIVER_ARRIVED   // le chauffeur est arrivé au point de rendez-vous
+  TRIP_STARTED     // le trajet a commencé
+  COMPLETED        // trajet terminé
+  REJECTED         // refusée par le professionnel
+  CANCELLED        // annulée par l'usager ou le professionnel
+  EXPIRED          // non traitée à temps par le professionnel
+}
+
+enum PaymentMethod {
+  MOBILE_MONEY
+  CASH_ON_BOARD
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum SeatPreference {
+  FENETRE
+  COULOIR
+  PEU_IMPORTE
+}
+
+enum AvailabilityStatus {
+  AVAILABLE
+  UNAVAILABLE
+}
+
+// Type de tarif qu'un chauffeur indépendant configure lui-même
+// (une agence, elle, ne fixe ses prix que sur ses véhicules — voir Vehicle.basePrice)
+enum PricingKind {
+  MINIMUM
+  PER_TRIP
+  PER_KM
+  FULL_DAY
+  AIRPORT
+  HOURLY
+  CUSTOM
+}
+
+// Durée d'accompagnement souhaitée pour le service Raha Mwana (chauffeur scolaire)
+enum MwanaDuration {
+  UNE_SEMAINE
+  UN_MOIS
+  UN_TRIMESTRE
+  ANNEE_SCOLAIRE
+}
+
+// Cycle de vie d'une demande Raha Mwana — finalisée uniquement lors du
+// rendez-vous physique en agence (vérification des justificatifs d'identité).
+enum MwanaRequestStatus {
+  PENDING    // formulaire + rendez-vous envoyés, en attente du passage en agence
+  CONFIRMED  // dossier validé en agence, chauffeur affecté
+  CANCELLED
+  COMPLETED
+}
+
+// ------------------ USAGERS (App mobile) ------------------
+
+model User {
+  id           String   @id @default(uuid())
+  firstName    String
+  lastName     String
+  phone        String   @unique
+  email        String?  @unique
+  passwordHash String
+  avatarUrl    String?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  bookings      Booking[]
+  reviews       Review[]
+  notifications Notification[]
+  mwanaRequests MwanaRequest[]
+
+  @@map("users")
+}
+
+// ------------------ AGENCES & ADMIN (Plateforme web) ------------------
+
+model Agency {
+  id               String       @id @default(uuid())
+  professionalCode String       @unique // ex: RAHA-AG-000057 — attribué par Raha, jamais choisi par l'agence
+  name             String
+  description      String?
+  logoUrl          String?
+  phone            String
+  email            String?
+  city             String
+  address          String?
+  type             AccountType  @default(AGENCE)
+  status           AgencyStatus @default(PENDING)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  // Renseignés lors d'une candidature "Devenir Professionnel" côté particulier (ancien flux)
+  licenseB        Boolean?
+  licenseType     VehicleType?
+  ownsVehicle     Boolean?
+  appointmentDate DateTime?
+
+  admins   AgencyAdmin[]
+  vehicles Vehicle[]
+  drivers  Driver[]
+  trips    Trip[]
+  bookings Booking[]
+  reviews  Review[]
+
+  @@map("agencies")
+}
+
+model AgencyAdmin {
+  id           String          @id @default(uuid())
+  agencyId     String
+  agency       Agency          @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  name         String
+  email        String          @unique
+  passwordHash String
+  role         AgencyAdminRole @default(MANAGER)
+  createdAt    DateTime        @default(now())
+
+  notifications Notification[]
+
+  @@map("agency_admins")
+}
+
+// Super-admin de la plateforme (valide les agences, supervise tout)
+model SuperAdmin {
+  id           String   @id @default(uuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  createdAt    DateTime @default(now())
+
+  @@map("super_admins")
+}
+
+// ------------------ CHAUFFEUR INDÉPENDANT ------------------
+// Professionnel autonome : gère son propre profil, ses propres véhicules,
+// ses propres tarifs et sa propre disponibilité. Ne dépend d'aucune agence.
+
+model IndependentDriver {
+  id               String       @id @default(uuid())
+  // NULL tant que Raha n'a pas validé le dossier du chauffeur (voir status
+  // ci-dessous) — l'identifiant professionnel n'est attribué qu'à ce moment-là.
+  professionalCode String?      @unique // ex: RAHA-CH-000124 — attribué par Raha après validation
+  firstName        String
+  lastName         String
+  phone            String       @unique
+  email            String?      @unique
+  passwordHash     String
+  photoUrl         String?
+  bio              String?
+  zones            String[]     // zones/villes d'activité (ex: ["Moroni", "Mitsamiouli"])
+  services         String[]     // services proposés (ex: ["Transfert aéroport", "Voyage"])
+  licenseNumber    String?
+  // PENDING à l'inscription : le chauffeur peut déjà se connecter, mais son
+  // profil/ses véhicules ne sont visibles des usagers, et son identifiant
+  // professionnel n'est attribué, qu'une fois Raha passé à APPROVED (après
+  // vérification de son dossier / rendez-vous). SUSPENDED bloque la connexion.
+  status           AgencyStatus @default(PENDING)
+  createdAt        DateTime     @default(now())
+  updatedAt        DateTime     @updatedAt
+
+  vehicles      Vehicle[]
+  pricingRules  DriverPricing[]
+  availability  DriverAvailability[]
+  bookings      Booking[]            @relation("IndependentDriverBookings")
+  notifications Notification[]
+
+  @@map("independent_drivers")
+}
+
+// Tarifs personnalisés qu'un chauffeur indépendant configure lui-même.
+// (Pour une agence, le prix vient uniquement de Vehicle.basePrice / pricePerKm.)
+model DriverPricing {
+  id                   String            @id @default(uuid())
+  independentDriverId  String
+  independentDriver    IndependentDriver @relation(fields: [independentDriverId], references: [id], onDelete: Cascade)
+  kind                 PricingKind
+  label                String?           // libellé libre, utile surtout pour CUSTOM (ex: "Tarif mariage")
+  amount               Float
+  createdAt            DateTime          @default(now())
+  updatedAt            DateTime          @updatedAt
+
+  @@map("driver_pricing")
+}
+
+// Calendrier de disponibilité — pour les chauffeurs indépendants ET les
+// chauffeurs d'agence. Une réservation CONFIRMED bloque automatiquement
+// la période correspondante (voir booking.controller.js).
+model DriverAvailability {
+  id                  String              @id @default(uuid())
+  driverId            String?
+  driver              Driver?             @relation(fields: [driverId], references: [id], onDelete: Cascade)
+  independentDriverId String?
+  independentDriver   IndependentDriver?  @relation(fields: [independentDriverId], references: [id], onDelete: Cascade)
+  date                DateTime            @db.Date
+  status              AvailabilityStatus  @default(AVAILABLE)
+  startTime           String?             // "08:00"
+  endTime             String?             // "18:00"
+  createdAt           DateTime            @default(now())
+  updatedAt           DateTime            @updatedAt
+
+  @@unique([driverId, date])
+  @@unique([independentDriverId, date])
+  @@map("driver_availability")
+}
+
+// ------------------ VÉHICULES & CHAUFFEURS D'AGENCE ------------------
+
+model Vehicle {
+  id                   String             @id @default(uuid())
+  // Un véhicule appartient SOIT à une agence, SOIT à un chauffeur indépendant (jamais les deux).
+  agencyId             String?
+  agency               Agency?            @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  independentDriverId  String?
+  independentDriver    IndependentDriver? @relation(fields: [independentDriverId], references: [id], onDelete: Cascade)
+
+  type          VehicleType
+  brand         String
+  model         String
+  plateNumber   String        @unique
+  seatCapacity  Int
+  photoUrl      String?
+  features      String[]
+  transmission  String? // "MANUELLE" | "AUTOMATIQUE"
+  year          Int?
+  basePrice     Float
+  pricePerKm    Float?
+  description   String?
+  status        VehicleStatus @default(ACTIVE)
+  currentLat    Float?
+  currentLng    Float?
+  locationUpdatedAt DateTime?
+  createdAt     DateTime      @default(now())
+  updatedAt     DateTime      @updatedAt
+
+  drivers  Driver[]
+  trips    Trip[]
+  bookings Booking[]
+  rentalPeriods VehicleRentalPeriod[]
+
+  @@map("vehicles")
+}
+
+// Période pendant laquelle le propriétaire (agence ou chauffeur indépendant)
+// met un véhicule en location (ex : du 1er au 7 septembre). `totalDays` est
+// figé à la création ; `bookedDays` augmente à chaque réservation CAR_RENTAL
+// confirmée sur cette période — les "jours restants" affichés à l'usager
+// sont toujours calculés comme totalDays - bookedDays (jamais stockés
+// directement, pour éviter toute incohérence).
+model VehicleRentalPeriod {
+  id         String   @id @default(uuid())
+  vehicleId  String
+  vehicle    Vehicle  @relation(fields: [vehicleId], references: [id], onDelete: Cascade)
+  startDate  DateTime
+  endDate    DateTime
+  totalDays  Int
+  bookedDays Int      @default(0)
+  active     Boolean  @default(true) // le propriétaire peut retirer le véhicule de la location sans perdre l'historique
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  bookings Booking[]
+
+  @@index([vehicleId, active])
+  @@map("vehicle_rental_periods")
+}
+
+// Chauffeur employé/rattaché à une agence. Dispose désormais de son propre
+// compte de connexion (activé par l'agence) pour accepter/refuser les
+// réservations qui lui sont attribuées, dans SA PROPRE application.
+model Driver {
+  id               String   @id @default(uuid())
+  agencyId         String
+  agency           Agency   @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  vehicleId        String?
+  vehicle          Vehicle? @relation(fields: [vehicleId], references: [id])
+  professionalCode String   @unique // ex: RAHA-PA-000125 — attribué par Raha dès la création par l'agence (l'agence se retrouve via la relation)
+  name             String
+  phone            String   @unique
+  passwordHash     String?  // null tant que le chauffeur n'a pas encore activé son compte de connexion
+  licenseNumber    String
+  photoUrl         String?
+  rating           Float    @default(5.0)
+  active           Boolean  @default(true)
+  createdAt        DateTime @default(now())
+
+  trips         Trip[]
+  bookings      Booking[]            @relation("AgencyDriverBookings")
+  availability  DriverAvailability[]
+  notifications Notification[]
+
+  @@map("drivers")
+}
+
+// ------------------ TRAJETS PROGRAMMÉS (agences) ------------------
+
+model Trip {
+  id                String     @id @default(uuid())
+  agencyId          String
+  agency            Agency     @relation(fields: [agencyId], references: [id], onDelete: Cascade)
+  vehicleId         String
+  vehicle           Vehicle    @relation(fields: [vehicleId], references: [id])
+  driverId          String?
+  driver            Driver?    @relation(fields: [driverId], references: [id])
+
+  originName        String
+  originLat         Float
+  originLng         Float
+  destinationName   String
+  destinationLat    Float
+  destinationLng    Float
+
+  departureTime     DateTime
+  estimatedArrival  DateTime?
+  distanceKm        Float?
+  pricePerSeat      Float
+  totalSeats        Int
+  bookedSeats       Int        @default(0)
+  status            TripStatus @default(SCHEDULED)
+  createdAt         DateTime   @default(now())
+  updatedAt         DateTime   @updatedAt
+
+  bookings       Booking[]
+  locationPings  LocationPing[]
+
+  @@map("trips")
+}
+
+// ------------------ RÉSERVATIONS ------------------
+// Le backend est la SEULE source de vérité : toute action (créer, accepter,
+// refuser, annuler, changer de statut) passe par ici et est diffusée en
+// temps réel à l'usager et au professionnel concerné (voir booking.controller.js).
+
+model Booking {
+  id              String         @id @default(uuid())
+  reference       String         @unique // ex: RAHA-BK-00045821
+
+  userId          String
+  user            User           @relation(fields: [userId], references: [id])
+
+  // Booking d'agence : agencyId + vehicleId (+ driverId une fois attribué)
+  agencyId        String?
+  agency          Agency?        @relation(fields: [agencyId], references: [id])
+  driverId        String?
+  driver          Driver?        @relation("AgencyDriverBookings", fields: [driverId], references: [id])
+
+  // Booking chauffeur indépendant : independentDriverId + vehicleId
+  independentDriverId String?
+  independentDriver   IndependentDriver? @relation("IndependentDriverBookings", fields: [independentDriverId], references: [id])
+
+  vehicleId       String
+  vehicle         Vehicle        @relation(fields: [vehicleId], references: [id])
+  tripId          String?
+  trip            Trip?          @relation(fields: [tripId], references: [id])
+
+  bookingType     BookingType
+  scheduledDate   DateTime       // début du trajet / de la mise à disposition
+  scheduledEndDate DateTime?     // fin estimée — sert à détecter les chevauchements (double réservation)
+  seatNumber      Int?
+  seatPreference  SeatPreference @default(PEU_IMPORTE)
+  passengersCount Int            @default(1)
+
+  pickupName      String?
+  pickupLat       Float?
+  pickupLng       Float?
+  pickupNote      String?        // précision textuelle du point de rendez-vous
+  dropoffName     String?
+  dropoffLat      Float?
+  dropoffLng      Float?
+
+  purpose         String?
+  notes           String?
+
+  // Message obligatoire envoyé par l'usager au professionnel une fois la
+  // réservation acceptée (ex : détails d'un mariage) — voir POST
+  // /bookings/:id/message. Reste vide tant que rien n'a été envoyé.
+  driverMessage   String?
+  driverMessageAt DateTime?
+
+  // Location de voiture (bookingType = CAR_RENTAL) : la période dont ces
+  // jours sont décomptés — voir VehicleRentalPeriod.bookedDays.
+  rentalPeriodId  String?
+  rentalPeriod    VehicleRentalPeriod? @relation(fields: [rentalPeriodId], references: [id])
+
+  totalPrice      Float
+  paymentMethod   PaymentMethod
+  paymentStatus   PaymentStatus  @default(PENDING)
+  status          BookingStatus  @default(PENDING)
+  statusHistory   BookingStatusEvent[]
+
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  payment       Payment?
+  review        Review?
+  notifications Notification[]
+
+  @@index([vehicleId, scheduledDate, scheduledEndDate])
+  @@index([driverId, scheduledDate, scheduledEndDate])
+  @@index([independentDriverId, scheduledDate, scheduledEndDate])
+  @@map("bookings")
+}
+
+// Historique de chaque changement de statut — traçabilité complète du
+// cycle de vie de la réservation, utile à l'usager et au professionnel.
+model BookingStatusEvent {
+  id        String        @id @default(uuid())
+  bookingId String
+  booking   Booking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  status    BookingStatus
+  note      String?
+  createdAt DateTime      @default(now())
+
+  @@map("booking_status_events")
+}
+
+// ------------------ RAHA MWANA (accompagnement scolaire) ------------------
+// Demande d'inscription au service de chauffeur scolaire dédié. Contrairement
+// aux autres services, l'inscription n'est jamais instantanée : l'usager
+// décrit son besoin, puis DOIT se présenter en agence (justificatifs
+// d'identité de l'adulte et de l'enfant) pour que Raha valide le dossier —
+// voir MwanaRequestStatus. Ce n'est donc pas une Booking classique.
+model MwanaRequest {
+  id        String   @id @default(uuid())
+  reference String   @unique // ex: RAHA-MW-00000012
+
+  userId String
+  user   User   @relation(fields: [userId], references: [id])
+
+  duration       MwanaDuration
+  numberOfPeople Int
+  tripsPerDay    Int
+  city           String
+
+  contactFirstName String
+  contactLastName  String
+  contactEmail     String
+  contactPhone     String
+
+  appointmentDate DateTime
+  status          MwanaRequestStatus @default(PENDING)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
+  @@index([status, appointmentDate])
+  @@map("mwana_requests")
+}
+
+model Payment {
+  id              String        @id @default(uuid())
+  bookingId       String        @unique
+  booking         Booking       @relation(fields: [bookingId], references: [id])
+  amount          Float
+  method          PaymentMethod
+  provider        String?
+  transactionRef  String?
+  status          PaymentStatus @default(PENDING)
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  @@map("payments")
+}
+
+// ------------------ SUIVI TEMPS RÉEL ------------------
+
+model LocationPing {
+  id        String   @id @default(uuid())
+  tripId    String
+  trip      Trip     @relation(fields: [tripId], references: [id], onDelete: Cascade)
+  lat       Float
+  lng       Float
+  heading   Float?
+  speedKmh  Float?
+  createdAt DateTime @default(now())
+
+  @@index([tripId, createdAt])
+  @@map("location_pings")
+}
+
+// ------------------ AVIS & NOTIFICATIONS ------------------
+
+model Review {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id])
+  agencyId  String
+  agency    Agency   @relation(fields: [agencyId], references: [id])
+  bookingId String   @unique
+  booking   Booking  @relation(fields: [bookingId], references: [id])
+  rating    Int
+  comment   String?
+  createdAt DateTime @default(now())
+
+  @@map("reviews")
+}
+
+// Table de notifications unique, partagée par les 4 types de comptes Raha
+// (usager, admin agence, chauffeur d'agence, chauffeur indépendant) —
+// une seule des colonnes de destinataire est renseignée par ligne.
+model Notification {
+  id                  String   @id @default(uuid())
+
+  userId              String?
+  user                User?              @relation(fields: [userId], references: [id])
+  agencyAdminId       String?
+  agencyAdmin         AgencyAdmin?       @relation(fields: [agencyAdminId], references: [id])
+  driverId            String?
+  driver              Driver?            @relation(fields: [driverId], references: [id])
+  independentDriverId String?
+  independentDriver   IndependentDriver? @relation(fields: [independentDriverId], references: [id])
+
+  bookingId String?
+  booking   Booking? @relation(fields: [bookingId], references: [id])
+
+  title     String
+  body      String
+  read      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([userId, read])
+  @@index([agencyAdminId, read])
+  @@index([driverId, read])
+  @@index([independentDriverId, read])
+  @@map("notifications")
+}

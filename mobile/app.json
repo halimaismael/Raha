@@ -1,0 +1,85 @@
+{
+  "expo": {
+    "name": "Raha",
+    "slug": "comoro-move",
+    "owner": "ismaelmoinahalima",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#0B4F4A"
+    },
+    "assetBundlePatterns": [
+      "**/*"
+    ],
+    "ios": {
+      "supportsTablet": true,
+      "bundleIdentifier": "km.comoromove.app",
+      "config": {
+        "googleMapsApiKey": "VOTRE_CLE_GOOGLE_MAPS_IOS"
+      },
+      "infoPlist": {
+        "NSLocationWhenInUseUsageDescription": "Raha a besoin de votre position pour trouver les véhicules à proximité et suivre votre trajet."
+      }
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#0B4F4A"
+      },
+      "package": "km.comoromove.app",
+      "config": {
+        "googleMaps": {
+          "apiKey": "VOTRE_CLE_GOOGLE_MAPS_ANDROID"
+        }
+      },
+      "permissions": [
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION",
+        "android.permission.RECORD_AUDIO"
+      ]
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "plugins": [
+      "expo-location",
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Raha a besoin d'accéder à vos photos pour choisir une image (véhicule, profil).",
+          "cameraPermission": "Raha a besoin d'accéder à l'appareil photo pour prendre une photo (véhicule, profil)."
+        }
+      ],
+      [
+        "expo-build-properties",
+        {
+          "android": {
+            "usesCleartextTraffic": true
+          }
+        }
+      ]
+    ],
+    "extra": {
+      "eas": {
+        "projectId": "21f0bece-7c91-48ba-a539-2e8fcc70556e"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/21f0bece-7c91-48ba-a539-2e8fcc70556e"
+    }
+  }
+}
