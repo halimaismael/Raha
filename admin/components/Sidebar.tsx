@@ -3,12 +3,13 @@ import Image from 'next/image';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useAuth } from '../context/AuthContext';
-import { IconDashboard, IconVan, IconUser, IconRoute, IconTicket, IconLogout } from './Icons';
+import { IconDashboard, IconVan, IconUser, IconRoute, IconTicket, IconLogout, IconCar } from './Icons';
 
 const NAV = [
   { href: '/dashboard', label: 'Tableau de bord', Icon: IconDashboard },
   { href: '/vehicles', label: 'Véhicules', Icon: IconVan },
   { href: '/drivers', label: 'Chauffeurs', Icon: IconUser },
+  { href: '/independent-drivers', label: 'Chauffeurs indépendants', Icon: IconCar },
   { href: '/trips', label: 'Trajets programmés', Icon: IconRoute },
   { href: '/bookings', label: 'Réservations', Icon: IconTicket },
 ];

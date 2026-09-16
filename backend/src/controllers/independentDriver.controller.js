@@ -77,6 +77,24 @@ async function validateDriver(req, res, next) {
   } catch (err) { next(err); }
 }
 
+// DELETE /api/independent-drivers/:id/reject — réservé à l'équipe Raha.
+// Rejette une candidature encore en attente (PENDING) : le dossier est
+// supprimé définitivement. Ne fait jamais rien à un chauffeur déjà validé
+// (APPROVED) ou suspendu — dans ce cas, utiliser la suspension plutôt que
+// le rejet, pour ne pas supprimer un professionnel déjà actif.
+async function rejectDriver(req, res, next) {
+  try {
+    if (!checkOpsKey(req, res)) return;
+    const driver = await prisma.independentDriver.findUnique({ where: { id: req.params.id } });
+    if (!driver) return res.status(404).json({ message: "Chauffeur introuvable" });
+    if (driver.status !== 'PENDING') {
+      return res.status(400).json({ message: "Seul un dossier en attente peut être refusé (utilisez la suspension pour un chauffeur déjà validé)." });
+    }
+    await prisma.independentDriver.delete({ where: { id: req.params.id } });
+    res.json({ message: `La candidature de ${driver.firstName} ${driver.lastName} a été refusée.` });
+  } catch (err) { next(err); }
+}
+
 // PATCH /api/independent-drivers/validate-by-phone  { phone }  — même chose
 // mais en retrouvant le chauffeur par son numéro de téléphone, pour éviter
 // d'avoir à chercher son "id" au préalable.
@@ -252,7 +270,7 @@ async function setMyAvailability(req, res, next) {
 
 module.exports = {
   opsKeyDebug,
-  listPending, validateDriver, validateDriverByPhone,
+  listPending, validateDriver, validateDriverByPhone, rejectDriver,
   getMe, updateMe, getPublicProfile, listIndependentDrivers,
   listMyPricing, createPricing, updatePricing, deletePricing,
   listMyAvailability, setMyAvailability,

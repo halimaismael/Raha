@@ -23,6 +23,7 @@ router.get('/ops-key-check', ctrl.opsKeyDebug);
 router.get('/pending', ctrl.listPending);
 router.patch('/validate-by-phone', ctrl.validateDriverByPhone);
 router.patch('/:id/validate', ctrl.validateDriver);
+router.delete('/:id/reject', ctrl.rejectDriver);
 
 // Annuaire public (app mobile côté usager)
 router.get('/', ctrl.listIndependentDrivers);
