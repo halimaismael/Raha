@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { View, Text, StyleSheet, Pressable, ScrollView } from 'react-native';
+import { View, Text, TextInput, StyleSheet, Pressable, ScrollView } from 'react-native';
 import { colors, radius, typography } from '../../theme/colors';
 
 // Même liste de villes que le reste du parcours (BecomeProfessionalScreen).
@@ -23,20 +23,46 @@ const TRIPS_PER_DAY = [
 const MIN_PEOPLE = 1;
 const MAX_PEOPLE = 8;
 
+// Ajuste la liste des noms d'enfants pour qu'elle ait toujours exactement
+// `count` entrées, en conservant celles déjà saisies.
+function resizeNames(names: string[], count: number): string[] {
+  const next = names.slice(0, count);
+  while (next.length < count) next.push('');
+  return next;
+}
+
 export default function MwanaFormScreen({ route, navigation }: any) {
   const { title } = route.params || {};
 
   const [duration, setDuration] = useState<string | null>(null);
   const [numberOfPeople, setNumberOfPeople] = useState(1);
+  const [childrenNames, setChildrenNames] = useState<string[]>(['']);
   const [tripsPerDay, setTripsPerDay] = useState<number | null>(null);
   const [city, setCity] = useState<string | null>(null);
   const [error, setError] = useState('');
 
   const durationLabel = DURATIONS.find((d) => d.key === duration)?.label;
 
+  function changePeople(next: number) {
+    setNumberOfPeople(next);
+    setChildrenNames((names) => resizeNames(names, next));
+  }
+
+  function setChildName(index: number, value: string) {
+    setChildrenNames((names) => {
+      const copy = [...names];
+      copy[index] = value;
+      return copy;
+    });
+  }
+
   function handleContinue() {
     if (!duration || !tripsPerDay || !city) {
       setError('Merci de répondre à toutes les questions avant de continuer.');
+      return;
+    }
+    if (childrenNames.some((n) => !n.trim())) {
+      setError("Merci d'indiquer le nom de chaque enfant concerné.");
       return;
     }
     setError('');
@@ -45,6 +71,7 @@ export default function MwanaFormScreen({ route, navigation }: any) {
       duration,
       durationLabel,
       numberOfPeople,
+      childrenNames: childrenNames.map((n) => n.trim()),
       tripsPerDay,
       city,
     });
@@ -84,7 +111,7 @@ export default function MwanaFormScreen({ route, navigation }: any) {
       <View style={styles.stepperRow}>
         <Pressable
           style={[styles.stepperBtn, numberOfPeople <= MIN_PEOPLE && styles.stepperBtnDisabled]}
-          onPress={() => setNumberOfPeople((n) => Math.max(MIN_PEOPLE, n - 1))}
+          onPress={() => changePeople(Math.max(MIN_PEOPLE, numberOfPeople - 1))}
           disabled={numberOfPeople <= MIN_PEOPLE}
         >
           <Text style={styles.stepperBtnText}>−</Text>
@@ -95,12 +122,30 @@ export default function MwanaFormScreen({ route, navigation }: any) {
         </View>
         <Pressable
           style={[styles.stepperBtn, numberOfPeople >= MAX_PEOPLE && styles.stepperBtnDisabled]}
-          onPress={() => setNumberOfPeople((n) => Math.min(MAX_PEOPLE, n + 1))}
+          onPress={() => changePeople(Math.min(MAX_PEOPLE, numberOfPeople + 1))}
           disabled={numberOfPeople >= MAX_PEOPLE}
         >
           <Text style={styles.stepperBtnText}>+</Text>
         </Pressable>
       </View>
+
+      {/* Nom de chaque enfant */}
+      <Text style={styles.sectionTitle}>Nom {numberOfPeople > 1 ? 'des enfants' : "de l'enfant"}</Text>
+      <Text style={styles.sectionHint}>
+        {numberOfPeople > 1 ? 'Un nom par enfant transporté.' : "Le nom complet de l'enfant transporté."}
+      </Text>
+      {childrenNames.map((name, index) => (
+        <View key={index} style={{ marginBottom: 10 }}>
+          {numberOfPeople > 1 && <Text style={styles.label}>Enfant {index + 1}</Text>}
+          <TextInput
+            style={styles.input}
+            value={name}
+            onChangeText={(v) => setChildName(index, v)}
+            placeholder="Nom et prénom de l'enfant"
+            placeholderTextColor={colors.slate}
+          />
+        </View>
+      ))}
 
       {/* Trajets par jour */}
       <Text style={styles.sectionTitle}>Combien de fois par jour ?</Text>
@@ -147,6 +192,9 @@ const styles = StyleSheet.create({
 
   sectionTitle: { fontSize: 15.5, fontWeight: '800', color: colors.charcoal, marginTop: 26 },
   sectionHint: { fontSize: 12.5, color: colors.slate, marginTop: 3, marginBottom: 12, lineHeight: 17 },
+
+  label: { ...typography.caption, marginBottom: 6 },
+  input: { backgroundColor: colors.white, borderRadius: radius.md, paddingHorizontal: 16, paddingVertical: 13, borderWidth: 1, borderColor: colors.line, fontSize: 14.5, color: colors.charcoal },
 
   optionGrid: { flexDirection: 'row', flexWrap: 'wrap', gap: 10 },
   optionCard: {

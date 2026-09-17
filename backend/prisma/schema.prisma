@@ -514,6 +514,19 @@ model MwanaRequest {
   contactEmail     String
   contactPhone     String
 
+  // Nom de chaque enfant concerné (un par personne annoncée dans numberOfPeople).
+  childrenNames String[] @default([])
+
+  // Justificatifs soumis par l'usager au moment de la prise de rendez-vous
+  // (photos : pièce d'identité, extrait de naissance, carte scolaire, etc.),
+  // stockés en data URI base64 — même principe que photoUrl/avatarUrl ailleurs
+  // dans l'app, pour rester cohérent sans dépendre d'un service de stockage externe.
+  documents String[] @default([])
+
+  // Coché par l'équipe Raha (AgenceRaha) une fois le dossier physique vérifié
+  // et complet après le passage en agence.
+  dossierReviewed Boolean @default(false)
+
   appointmentDate DateTime
   status          MwanaRequestStatus @default(PENDING)
 

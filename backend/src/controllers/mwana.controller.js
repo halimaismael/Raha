@@ -9,13 +9,16 @@ function isValidEmail(v) {
 }
 
 // Usager : envoie le formulaire Raha Mwana + le créneau de rendez-vous choisi
-// en une seule requête (le mobile enchaîne les deux écrans avant d'appeler
-// l'API). Le dossier reste PENDING jusqu'au passage physique en agence.
+// EN MÊME TEMPS que les justificatifs (photos) et le nom de chaque enfant
+// concerné, en une seule requête (le mobile enchaîne les écrans avant
+// d'appeler l'API). Le dossier reste PENDING jusqu'au passage physique en
+// agence, où l'équipe Raha vérifie les originaux et coche "dossier vérifié".
 async function createMwanaRequest(req, res, next) {
   try {
     const {
       duration, numberOfPeople, tripsPerDay, city,
       contactFirstName, contactLastName, contactEmail, contactPhone,
+      childrenNames, documents,
       appointmentDate,
     } = req.body;
 
@@ -34,6 +37,19 @@ async function createMwanaRequest(req, res, next) {
     if (!isValidEmail(contactEmail)) {
       return res.status(400).json({ message: 'Adresse email invalide.' });
     }
+
+    const names = Array.isArray(childrenNames) ? childrenNames.map((n) => String(n).trim()).filter(Boolean) : [];
+    if (names.length !== Number(numberOfPeople)) {
+      return res.status(400).json({
+        message: `Merci de renseigner le nom de ${numberOfPeople > 1 ? 'chacun des' : 'l\''} ${numberOfPeople} enfant${numberOfPeople > 1 ? 's' : ''} annoncé${numberOfPeople > 1 ? 's' : ''}.`,
+      });
+    }
+
+    const docs = Array.isArray(documents) ? documents.filter((d) => typeof d === 'string' && d.startsWith('data:')) : [];
+    if (docs.length === 0) {
+      return res.status(400).json({ message: "Merci de joindre au moins un justificatif (pièce d'identité, extrait de naissance ou carte scolaire de l'enfant)." });
+    }
+
     const appt = new Date(appointmentDate);
     if (!appointmentDate || Number.isNaN(appt.getTime()) || appt.getTime() < Date.now()) {
       return res.status(400).json({ message: 'Merci de choisir un rendez-vous valide, dans le futur.' });
@@ -53,6 +69,8 @@ async function createMwanaRequest(req, res, next) {
         contactLastName,
         contactEmail,
         contactPhone,
+        childrenNames: names,
+        documents: docs,
         appointmentDate: appt,
       },
     });
@@ -88,12 +106,15 @@ async function listMyMwanaRequests(req, res, next) {
 const STATUSES = ['PENDING', 'CONFIRMED', 'CANCELLED', 'COMPLETED'];
 
 // GET /api/mwana-requests/admin/all — tous les rendez-vous Raha Mwana, avec
-// les infos de l'usager qui les a pris.
+// les infos du compte usager (pour référence) en plus des champs contact*
+// propres à chaque demande (le contact d'un rendez-vous peut différer du nom
+// du compte qui l'a pris — ex: une même personne prend rendez-vous pour
+// plusieurs proches).
 async function listAllMwanaRequests(req, res, next) {
   try {
     const requests = await prisma.mwanaRequest.findMany({
       include: {
-        user: { select: { firstName: true, lastName: true, phone: true } },
+        user: { select: { firstName: true, lastName: true, phone: true, email: true } },
       },
       orderBy: { appointmentDate: 'asc' },
     });
@@ -119,7 +140,24 @@ async function updateMwanaStatus(req, res, next) {
   } catch (err) { next(err); }
 }
 
+// PATCH /api/mwana-requests/:id/dossier-reviewed  { reviewed: boolean }
+// Coché par l'équipe Raha une fois le dossier physique (justificatifs
+// papier) vérifié et complet, indépendamment du statut du rendez-vous.
+async function updateDossierReviewed(req, res, next) {
+  try {
+    const { reviewed } = req.body;
+    if (typeof reviewed !== 'boolean') {
+      return res.status(400).json({ message: 'Le champ "reviewed" doit être un booléen (true/false).' });
+    }
+    const request = await prisma.mwanaRequest.update({
+      where: { id: req.params.id },
+      data: { dossierReviewed: reviewed },
+    });
+    res.json({ message: `Dossier ${request.reference} marqué comme ${reviewed ? 'vérifié' : 'non vérifié'}.`, request });
+  } catch (err) { next(err); }
+}
+
 module.exports = {
   createMwanaRequest, listMyMwanaRequests,
-  listAllMwanaRequests, updateMwanaStatus,
+  listAllMwanaRequests, updateMwanaStatus, updateDossierReviewed,
 };

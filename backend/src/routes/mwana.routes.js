@@ -10,5 +10,6 @@ router.get('/mine', requireAuth(['USER']), ctrl.listMyMwanaRequests);
 // Super-admin Raha (tableau de bord "Agence Raha")
 router.get('/admin/all', requireAuth(['SUPER_ADMIN']), ctrl.listAllMwanaRequests);
 router.patch('/:id/status', requireAuth(['SUPER_ADMIN']), ctrl.updateMwanaStatus);
+router.patch('/:id/dossier-reviewed', requireAuth(['SUPER_ADMIN']), ctrl.updateDossierReviewed);
 
 module.exports = router;
